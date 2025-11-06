@@ -45,7 +45,7 @@ if not SKIP_CUDA_BUILD:
     HAS_SM121 = False
 
     # Supported NVIDIA GPU architectures.
-    SUPPORTED_ARCHS = {"8.0", "8.6", "8.9", "9.0", "10.0", "12.0", "12.1"}
+    SUPPORTED_ARCHS = {"8.0", "8.6", "8.9", "9.0", "10.0" "12.0"}
 
     # Compiler flags.
     CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"]
@@ -159,9 +159,6 @@ if not SKIP_CUDA_BUILD:
         elif capability.startswith("12.0"):
             HAS_SM120 = True
             num = "120a"
-        elif capability.startswith("12.1"):
-            HAS_SM121 = True
-            num = "121a"
         else:
             continue
         # NVCC_FLAGS += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
@@ -171,7 +168,7 @@ if not SKIP_CUDA_BUILD:
     # Fused kernels and QAttn variants
     from torch.utils.cpp_extension import CUDAExtension
 
-    if HAS_SM80 or HAS_SM86 or HAS_SM89 or HAS_SM90 or HAS_SM120:
+    if HAS_SM80 or HAS_SM86 or HAS_SM89 or HAS_SM90 or HAS_SM100 or HAS_SM120:
 
         NVCC_FLAGS_TMP = NVCC_FLAGS.copy()
         if HAS_SM80:
@@ -185,6 +182,9 @@ if not SKIP_CUDA_BUILD:
             NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
         if HAS_SM90:
             num = "90a"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM100:
+            num = "100a"
             NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
         if HAS_SM120:
             num = "120"
@@ -201,7 +201,7 @@ if not SKIP_CUDA_BUILD:
             )
         )
 
-    if HAS_SM89 or HAS_SM90 or HAS_SM120:
+    if HAS_SM89 or HAS_SM90 or HAS_SM100 or HAS_SM120:
 
         NVCC_FLAGS_TMP = NVCC_FLAGS.copy()
         if HAS_SM89:
@@ -209,6 +209,9 @@ if not SKIP_CUDA_BUILD:
             NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
         if HAS_SM90:
             num = "90a"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM100:
+            num = "100a"
             NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
         if HAS_SM120:
             num = "120"
