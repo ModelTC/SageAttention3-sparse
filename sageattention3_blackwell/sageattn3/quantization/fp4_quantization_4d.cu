@@ -133,7 +133,7 @@ struct PackedVec {
 template <uint32_t head_dim, uint32_t BLOCK_SIZE, bool permute, typename T>
 __global__ void scaled_fp4_quant_kernel(
     const T* input, uint8_t* output, uint8_t* output_sf,
-    int batch_size, int num_heads, int num_tokens,
+    int batch_size, int num_heads, int num_tokens, int ori_num_tokens,
     int stride_bz_input, int stride_h_input, int stride_seq_input,
     int stride_bz_output, int stride_h_output, int stride_seq_output,
     int stride_bz_output_sf, int stride_h_output_sf, int stride_seq_output_sf) {
@@ -174,7 +174,7 @@ __global__ void scaled_fp4_quant_kernel(
     reinterpret_cast<uint32_t&>(in_vec.elts[i]) = 0;
   }
   
-  if (load_token_id < num_tokens) {
+  if (load_token_id < ori_num_tokens) {
     in_vec = reinterpret_cast<PackedVec const*>(input + 
                                           batch_id * stride_bz_input + // batch dim
                                           head_id * stride_h_input +   // head dim
@@ -260,7 +260,7 @@ __global__ void scaled_fp4_quant_kernel(
 template <uint32_t head_dim, uint32_t BLOCK_SIZE, typename T>
 __global__ void scaled_fp4_quant_trans_kernel(
     const T* input, uint8_t* output, uint8_t* output_sf,
-    int batch_size, int num_heads, int num_tokens,
+    int batch_size, int num_heads, int num_tokens, int ori_num_tokens,
     int stride_bz_input, int stride_h_input, int stride_seq_input,
     int stride_bz_output, int stride_h_output, int stride_d_output,
     int stride_bz_output_sf, int stride_h_output_sf, int stride_d_output_sf) {
@@ -289,7 +289,7 @@ __global__ void scaled_fp4_quant_trans_kernel(
     reinterpret_cast<uint32_t&>(in_vec.elts[i]) = 0;
   }
   
-  if (token_id < num_tokens) {
+  if (token_id < ori_num_tokens) {
     in_vec = reinterpret_cast<PackedVec const*>(input + 
                                           batch_id * stride_bz_input + // batch dim
                                           head_id * stride_h_input +   // head dim
@@ -413,11 +413,12 @@ void scaled_fp4_quant(torch::Tensor const& input,
   const int stride_bz_output = output.stride(0);
   const int stride_bz_output_sf = output_sf.stride(0);
 
-  int num_tokens, num_heads;
+  int ori_num_tokens, num_tokens, num_heads;
   int stride_seq_input, stride_seq_output, stride_seq_output_sf;
   int stride_h_input, stride_h_output, stride_h_output_sf;
   if (tensor_layout == 0) {
-    num_tokens = input.size(1);
+    ori_num_tokens = input.size(1);
+    num_tokens = ((ori_num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
     num_heads = input.size(2);
     stride_seq_input = input.stride(1);
     stride_seq_output = output.stride(1);
@@ -429,7 +430,8 @@ void scaled_fp4_quant(torch::Tensor const& input,
     CHECK_SHAPE(output, batch_size, num_tokens, num_heads, head_dim / 2);
     CHECK_SHAPE(output_sf, batch_size, num_tokens, num_heads, head_dim / 16);
   } else {
-    num_tokens = input.size(2);
+    ori_num_tokens = input.size(2);
+    num_tokens = ((ori_num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
     num_heads = input.size(1);
     stride_seq_input = input.stride(2);
     stride_seq_output = output.stride(2);
@@ -455,7 +457,7 @@ void scaled_fp4_quant(torch::Tensor const& input,
               reinterpret_cast<c_type*>(input.data_ptr()),
               reinterpret_cast<uint8_t*>(output.data_ptr()),
               reinterpret_cast<uint8_t*>(output_sf.data_ptr()),
-              batch_size, num_heads, num_tokens,
+              batch_size, num_heads, num_tokens, ori_num_tokens,
               stride_bz_input, stride_h_input, stride_seq_input,
               stride_bz_output, stride_h_output, stride_seq_output,
               stride_bz_output_sf, stride_h_output_sf, stride_seq_output_sf);
@@ -491,11 +493,12 @@ void scaled_fp4_quant_permute(torch::Tensor const& input,
   const int stride_bz_output = output.stride(0);
   const int stride_bz_output_sf = output_sf.stride(0);
 
-  int num_tokens, num_heads;
+  int ori_num_tokens, num_tokens, num_heads;
   int stride_seq_input, stride_seq_output, stride_seq_output_sf;
   int stride_h_input, stride_h_output, stride_h_output_sf;
   if (tensor_layout == 0) {
-    num_tokens = input.size(1);
+    ori_num_tokens = input.size(1);
+    num_tokens = ((ori_num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
     num_heads = input.size(2);
     stride_seq_input = input.stride(1);
     stride_seq_output = output.stride(1);
@@ -507,7 +510,8 @@ void scaled_fp4_quant_permute(torch::Tensor const& input,
     CHECK_SHAPE(output, batch_size, ((num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE, num_heads, head_dim / 2);
     CHECK_SHAPE(output_sf, batch_size, ((num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE, num_heads, head_dim / 16);
   } else {
-    num_tokens = input.size(2);
+    ori_num_tokens = input.size(2);
+    num_tokens = ((ori_num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
     num_heads = input.size(1);
     stride_seq_input = input.stride(2);
     stride_seq_output = output.stride(2);
@@ -534,7 +538,7 @@ void scaled_fp4_quant_permute(torch::Tensor const& input,
               reinterpret_cast<c_type*>(input.data_ptr()),
               reinterpret_cast<uint8_t*>(output.data_ptr()),
               reinterpret_cast<uint8_t*>(output_sf.data_ptr()),
-              batch_size, num_heads, num_tokens,
+              batch_size, num_heads, num_tokens, ori_num_tokens,
               stride_bz_input, stride_h_input, stride_seq_input,
               stride_bz_output, stride_h_output, stride_seq_output,
               stride_bz_output_sf, stride_h_output_sf, stride_seq_output_sf);
@@ -570,12 +574,13 @@ void scaled_fp4_quant_trans(torch::Tensor const& input,
   const int stride_bz_output = output.stride(0);
   const int stride_bz_output_sf = output_sf.stride(0);
 
-  int num_tokens, num_heads;
+  int ori_num_tokens, num_tokens, num_heads;
   int stride_seq_input; 
   int stride_d_output, stride_d_output_sf;
   int stride_h_input, stride_h_output, stride_h_output_sf;
   if (tensor_layout == 0) {
-    num_tokens = input.size(1);
+    ori_num_tokens = input.size(1);
+    num_tokens = ((ori_num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
     num_heads = input.size(2);
     stride_seq_input = input.stride(1);
     stride_d_output = output.stride(1);
@@ -587,7 +592,8 @@ void scaled_fp4_quant_trans(torch::Tensor const& input,
     CHECK_SHAPE(output, batch_size, head_dim, num_heads, ((num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE / 2);
     CHECK_SHAPE(output_sf, batch_size, head_dim, num_heads, ((num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE / 16);
   } else {
-    num_tokens = input.size(2);
+    ori_num_tokens = input.size(2);
+    num_tokens = ((ori_num_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
     num_heads = input.size(1);
     stride_seq_input = input.stride(2);
     stride_d_output = output.stride(2);
@@ -613,7 +619,7 @@ void scaled_fp4_quant_trans(torch::Tensor const& input,
               reinterpret_cast<c_type*>(input.data_ptr()),
               reinterpret_cast<uint8_t*>(output.data_ptr()),
               reinterpret_cast<uint8_t*>(output_sf.data_ptr()),
-              batch_size, num_heads, num_tokens,
+              batch_size, num_heads, num_tokens, ori_num_tokens,
               stride_bz_input, stride_h_input, stride_seq_input,
               stride_bz_output, stride_h_output, stride_d_output,
               stride_bz_output_sf, stride_h_output_sf, stride_d_output_sf);
