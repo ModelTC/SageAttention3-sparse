@@ -86,21 +86,6 @@ def pad_128(x):
     return F.pad(x, (0, pad_len), value=0)
 
 
-def preprocess_qkv(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, per_block_mean: bool = True):
-    k -= k.mean(dim=-2, keepdim=True)
-
-    if per_block_mean:
-        q, qm = triton_group_mean(q)
-    else:
-        qm = q.mean(dim=-2, keepdim=True)
-        q = q - qm
-
-    delta_s = torch.matmul(qm, k.transpose(-2, -1))
-    delta_s = pad_128(delta_s)
-
-    return q, k, v, delta_s
-
-
 def scale_and_quant_fp4(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     assert x.ndim == 4
     B, H, N, D = x.shape
@@ -153,17 +138,27 @@ def sageattn3_blackwell(q, k, v, attn_mask = None, is_causal = False, is_sparse 
     KL = k.size(2)
     is_bf16 = q.dtype == torch.bfloat16
 
+    km = k.mean(dim=-2, keepdim=True)
+    k -= km
+
     if is_sparse:
         lut, valid_block_num = get_block_map_meansim(q, k, is_causal = is_causal, cdfthreshd=None, topk=0.2, return_lut=True, BLKQ=128, BLKK=128)
     else:
         lut, valid_block_num = None, None
 
+    if per_block_mean:
+        q, qm = triton_group_mean(q)
+    else:
+        qm = q.mean(dim=-2, keepdim=True)
+        q = q - qm
 
-    q, k, v, delta_s = preprocess_qkv(q, k, v, per_block_mean)
+    delta_s = torch.matmul(qm, k.transpose(-2, -1))
+    delta_s = pad_128(delta_s)
 
     qlist_from_cuda = scale_and_quant_fp4(q)
     klist_from_cuda = scale_and_quant_fp4_permute(k)
     vlist_from_cuda = scale_and_quant_fp4_transpose(v)
+
     o_fp4 = blockscaled_fp4_attn(
     qlist_from_cuda,
     klist_from_cuda, 
