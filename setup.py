@@ -45,7 +45,7 @@ if not SKIP_CUDA_BUILD:
     HAS_SM121 = False
 
     # Supported NVIDIA GPU architectures.
-    SUPPORTED_ARCHS = {"8.0", "8.6", "8.9", "9.0", "10.0", "12.0", "12.1"}
+    SUPPORTED_ARCHS = {"8.0", "8.6", "8.9", "9.0", "10.0" "12.0"}
 
     # Compiler flags.
     CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"]
@@ -159,19 +159,37 @@ if not SKIP_CUDA_BUILD:
         elif capability.startswith("12.0"):
             HAS_SM120 = True
             num = "120a"
-        elif capability.startswith("12.1"):
-            HAS_SM121 = True
-            num = "121a"
         else:
             continue
-        NVCC_FLAGS += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
-        if capability.endswith("+PTX"):
-            NVCC_FLAGS += ["-gencode", f"arch=compute_{num},code=compute_{num}"]
+        # NVCC_FLAGS += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        # if capability.endswith("+PTX"):
+        #     NVCC_FLAGS += ["-gencode", f"arch=compute_{num},code=compute_{num}"]
 
     # Fused kernels and QAttn variants
     from torch.utils.cpp_extension import CUDAExtension
 
-    if HAS_SM80 or HAS_SM86 or HAS_SM89 or HAS_SM90 or HAS_SM100 or HAS_SM120 or HAS_SM121:
+    if HAS_SM80 or HAS_SM86 or HAS_SM89 or HAS_SM90 or HAS_SM100 or HAS_SM120:
+
+        NVCC_FLAGS_TMP = NVCC_FLAGS.copy()
+        if HAS_SM80:
+            num = "80"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM86:
+            num = "86"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM89:
+            num = "89"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM90:
+            num = "90a"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM100:
+            num = "100a"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM120:
+            num = "120a"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+
         ext_modules.append(
             CUDAExtension(
                 name="sageattention._qattn_sm80",
@@ -179,11 +197,26 @@ if not SKIP_CUDA_BUILD:
                     "csrc/qattn/pybind_sm80.cpp",
                     "csrc/qattn/qk_int_sv_f16_cuda_sm80.cu",
                 ],
-                extra_compile_args={"cxx": CXX_FLAGS, "nvcc": NVCC_FLAGS},
+                extra_compile_args={"cxx": CXX_FLAGS, "nvcc": NVCC_FLAGS_TMP},
             )
         )
 
-    if HAS_SM89 or HAS_SM90 or HAS_SM100 or HAS_SM120 or HAS_SM121:
+    if HAS_SM89 or HAS_SM90 or HAS_SM100 or HAS_SM120:
+
+        NVCC_FLAGS_TMP = NVCC_FLAGS.copy()
+        if HAS_SM89:
+            num = "89"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM90:
+            num = "90a"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM100:
+            num = "100a"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+        if HAS_SM120:
+            num = "120a"
+            NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+
         ext_modules.append(
             CUDAExtension(
                 name="sageattention._qattn_sm89",
@@ -197,11 +230,16 @@ if not SKIP_CUDA_BUILD:
                     "csrc/qattn/sm89_qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf.cu",
                     "csrc/qattn/sm89_qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf.cu",
                 ],
-                extra_compile_args={"cxx": CXX_FLAGS, "nvcc": NVCC_FLAGS},
+                extra_compile_args={"cxx": CXX_FLAGS, "nvcc": NVCC_FLAGS_TMP},
             )
         )
 
     if HAS_SM90:
+
+        NVCC_FLAGS_TMP = NVCC_FLAGS.copy()
+        num = "90a"
+        NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+
         ext_modules.append(
             CUDAExtension(
                 name="sageattention._qattn_sm90",
@@ -209,16 +247,37 @@ if not SKIP_CUDA_BUILD:
                     "csrc/qattn/pybind_sm90.cpp",
                     "csrc/qattn/qk_int_sv_f8_cuda_sm90.cu",
                 ],
-                extra_compile_args={"cxx": CXX_FLAGS, "nvcc": NVCC_FLAGS},
+                extra_compile_args={"cxx": CXX_FLAGS, "nvcc": NVCC_FLAGS_TMP},
                 extra_link_args=['-lcuda'],
             )
         )
+
+
+    NVCC_FLAGS_TMP = NVCC_FLAGS.copy()
+    if HAS_SM80:
+        num = "80"
+        NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+    if HAS_SM86:
+        num = "86"
+        NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+    if HAS_SM89:
+        num = "89"
+        NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+    if HAS_SM90:
+        num = "90a"
+        NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+    if HAS_SM100:
+        num = "100a"
+        NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
+    if HAS_SM120:
+        num = "120a"
+        NVCC_FLAGS_TMP += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
 
     ext_modules.append(
         CUDAExtension(
             name="sageattention._fused",
             sources=["csrc/fused/pybind.cpp", "csrc/fused/fused.cu"],
-            extra_compile_args={"cxx": CXX_FLAGS, "nvcc": NVCC_FLAGS},
+            extra_compile_args={"cxx": CXX_FLAGS, "nvcc": NVCC_FLAGS_TMP},
         )
     )
 

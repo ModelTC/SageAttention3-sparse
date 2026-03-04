@@ -11,7 +11,7 @@ from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtensio
 
 this_dir = os.path.dirname(os.path.abspath(__file__))
 
-PACKAGE_NAME = "sageattn3"
+PACKAGE_NAME = "sageattn3_sparse"
 
 # FORCE_BUILD: Force a fresh build locally, instead of attempting to find prebuilt wheels
 # SKIP_CUDA_BUILD: Intended to allow CI to use a simple `python setup.py sdist` run to copy over raw files, without any cuda compilation
@@ -59,18 +59,19 @@ if not SKIP_CUDA_BUILD:
     _, bare_metal_version = get_cuda_bare_metal_version(CUDA_HOME)
     if bare_metal_version < Version("12.8"):
         raise RuntimeError("Sage3 is only supported on CUDA 12.8 and above")
-    cc_major, cc_minor = torch.cuda.get_device_capability()
-    if (cc_major, cc_minor) == (10, 0):  # sm_100
-        cc_flag.append("-gencode")
-        cc_flag.append("arch=compute_100a,code=sm_100a")
-    elif (cc_major, cc_minor) == (12, 0):  # sm_120
-        cc_flag.append("-gencode")
-        cc_flag.append("arch=compute_120a,code=sm_120a")
-    elif (cc_major, cc_minor) == (12, 1):  # sm_121
-        cc_flag.append("-gencode")
-        cc_flag.append("arch=compute_121a,code=sm_121a")
-    else:
-        raise RuntimeError("Unsupported GPU")
+    # cc_major, cc_minor = torch.cuda.get_device_capability()
+    # if (cc_major, cc_minor) == (10, 0):  # sm_100
+    #     cc_flag.append("-gencode")
+    #     cc_flag.append("arch=compute_100a,code=sm_100a")
+    # elif (cc_major, cc_minor) == (12, 0):  # sm_120
+    #     cc_flag.append("-gencode")
+    #     cc_flag.append("arch=compute_120a,code=sm_120a")
+    # else:
+    #     raise RuntimeError("Unsupported GPU")
+    cc_flag.append("-gencode")
+    cc_flag.append("arch=compute_100a,code=sm_100a")
+    cc_flag.append("-gencode")
+    cc_flag.append("arch=compute_120a,code=sm_120a")
 
     # HACK: The compiler flag -D_GLIBCXX_USE_CXX11_ABI is set to be the same as
     # torch._C._GLIBCXX_USE_CXX11_ABI
@@ -109,15 +110,15 @@ if not SKIP_CUDA_BUILD:
         "-DDQINRMEM",
     ]
     include_dirs = [
-        repo_dir / "sageattn3",
+        repo_dir / "sageattn3_sparse",
         cutlass_dir / "include",
         cutlass_dir / "tools" / "util" / "include",
     ]
 
     ext_modules.append(
         CUDAExtension(
-            name="fp4attn_cuda",
-            sources=["sageattn3/blackwell/api.cu"],
+            name="fp4attn_cuda_sparse",
+            sources=["sageattn3_sparse/blackwell/api.cu"],
             extra_compile_args={
                 "cxx": ["-O3", "-std=c++17"],
                 "nvcc": append_nvcc_threads(
@@ -131,8 +132,8 @@ if not SKIP_CUDA_BUILD:
     )
     ext_modules.append(
         CUDAExtension(
-            name="fp4quant_cuda",
-            sources=["sageattn3/quantization/fp4_quantization_4d.cu"],
+            name="fp4quant_cuda_sparse",
+            sources=["sageattn3_sparse/quantization/fp4_quantization_4d.cu"],
             extra_compile_args={
                 "cxx": ["-O3", "-std=c++17"],
                 "nvcc": append_nvcc_threads(
@@ -164,7 +165,7 @@ setup(
             "benchmarks",
         )
     ),
-    description="FP4FlashAttention",
+    description="FP4FlashAttention with sparse support.",
     long_description_content_type="text/markdown",
     classifiers=[
         "Programming Language :: Python :: 3",
