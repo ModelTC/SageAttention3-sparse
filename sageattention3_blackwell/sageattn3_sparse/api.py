@@ -19,8 +19,8 @@ import triton.language as tl
 import torch.nn.functional as F
 from typing import Tuple
 from torch.nn.functional import scaled_dot_product_attention as sdpa
-import fp4attn_cuda
-import fp4quant_cuda
+import fp4attn_cuda_sparse
+import fp4quant_cuda_sparse
 from .sparge import get_block_map_meansim
 
 
@@ -77,14 +77,61 @@ def triton_group_mean(q: torch.Tensor):
     )
     return q_out, qm
 
-
-def pad_128(x):
+def pad_128_dim3(x):
     L = x.size(3)
     pad_len = (128 - L % 128) % 128
     if pad_len == 0:
         return x
     return F.pad(x, (0, pad_len), value=0)
 
+def pad_128_dim2(x):
+    L = x.size(2)
+    pad_len = (128 - L % 128) % 128
+    if pad_len == 0:
+        return x.contiguous()
+    return F.pad(x, (0, 0, 0, pad_len), value=0).contiguous()
+
+def quant_fp4(x: torch.Tensor, doPadN=False, in_tensor_layout="NHD", out_tensor_layout="NHD") -> Tuple[torch.Tensor, torch.Tensor]:
+    assert x.ndim == 4
+    if in_tensor_layout == "HND":
+        B, H, N, D = x.shape
+    else:
+        B, N, H, D = x.shape
+
+    if doPadN:
+        pad_N = int((N + 128 - 1) // 128 * 128)
+    else:
+        pad_N = N
+
+    if out_tensor_layout == "HND":
+        packed_fp4 = torch.empty((B, H, pad_N, D // 2), device=x.device, dtype=torch.uint8)
+        fp8_scale = torch.empty((B, H, pad_N, D // 16), device=x.device, dtype=torch.float8_e4m3fn)
+    else:
+        packed_fp4 = torch.empty((B, pad_N, H, D // 2), device=x.device, dtype=torch.uint8)
+        fp8_scale = torch.empty((B, pad_N, H, D // 16), device=x.device, dtype=torch.float8_e4m3fn)
+
+    in_layout = 0 if in_tensor_layout == "NHD" else 1
+    out_layout = 0 if out_tensor_layout == "NHD" else 1
+    fp4quant_cuda_sparse.fp4_quant(x, packed_fp4, fp8_scale, in_layout, out_layout)
+    return packed_fp4, fp8_scale
+
+def dequant_fp4(packed_fp4: torch.Tensor, fp8_scale: torch.Tensor, in_tensor_layout="NHD", out_tensor_layout="NHD"):
+    assert packed_fp4.ndim == 4
+    if in_tensor_layout == "HND":
+        B, H, N, fp4_D = packed_fp4.shape
+    else:
+        B, N, H, fp4_D = packed_fp4.shape
+    D = fp4_D * 2
+
+    if out_tensor_layout == "HND":
+        output = torch.empty((B, H, N, D), device=packed_fp4.device, dtype=torch.bfloat16)
+    else:
+        output = torch.empty((B, N, H, D), device=packed_fp4.device, dtype=torch.bfloat16)
+
+    in_layout = 0 if in_tensor_layout == "NHD" else 1
+    out_layout = 0 if out_tensor_layout == "NHD" else 1
+    fp4quant_cuda_sparse.fp4_dequant(packed_fp4, fp8_scale, output, in_layout, out_layout)
+    return output
 
 def scale_and_quant_fp4(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     assert x.ndim == 4
@@ -92,7 +139,7 @@ def scale_and_quant_fp4(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     pad_N = int((N + 128 - 1) // 128 * 128)
     packed_fp4 = torch.empty((B, H, pad_N, D // 2), device=x.device, dtype=torch.uint8)
     fp8_scale = torch.empty((B, H, pad_N, D // 16), device=x.device, dtype=torch.float8_e4m3fn)
-    fp4quant_cuda.scaled_fp4_quant(x, packed_fp4, fp8_scale, 1)
+    fp4quant_cuda_sparse.scaled_fp4_quant(x, packed_fp4, fp8_scale, 1)
     return packed_fp4, fp8_scale
 
 def scale_and_quant_fp4_permute(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -101,7 +148,7 @@ def scale_and_quant_fp4_permute(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Te
     pad_N = int((N + 128 - 1) // 128 * 128)
     packed_fp4 = torch.empty((B, H, pad_N, D // 2), device=x.device, dtype=torch.uint8)
     fp8_scale = torch.empty((B, H, pad_N, D // 16), device=x.device, dtype=torch.float8_e4m3fn)
-    fp4quant_cuda.scaled_fp4_quant_permute(x, packed_fp4, fp8_scale, 1)
+    fp4quant_cuda_sparse.scaled_fp4_quant_permute(x, packed_fp4, fp8_scale, 1)
     return packed_fp4, fp8_scale
 
 def scale_and_quant_fp4_transpose(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -110,7 +157,7 @@ def scale_and_quant_fp4_transpose(x: torch.Tensor) -> Tuple[torch.Tensor, torch.
     pad_N = int((N + 128 - 1) // 128 * 128)
     packed_fp4 = torch.empty((B, H, D, pad_N // 2), device=x.device, dtype=torch.uint8)
     fp8_scale = torch.empty((B, H, D, pad_N // 16), device=x.device, dtype=torch.float8_e4m3fn)
-    fp4quant_cuda.scaled_fp4_quant_trans(x, packed_fp4, fp8_scale, 1)
+    fp4quant_cuda_sparse.scaled_fp4_quant_trans(x, packed_fp4, fp8_scale, 1)
     return packed_fp4, fp8_scale
 
 def blockscaled_fp4_attn(qlist: Tuple, 
@@ -126,10 +173,10 @@ def blockscaled_fp4_attn(qlist: Tuple,
                          is_bf16: bool = True
                         ):
     softmax_scale = (qlist[0].shape[-1] * 2) ** (-0.5)
-    return fp4attn_cuda.fwd(qlist[0], klist[0], vlist[0], qlist[1], klist[1], vlist[1], delta_s, lut, valid_block_num, KL, None, softmax_scale, is_causal, is_sparse, per_block_mean, is_bf16)
+    return fp4attn_cuda_sparse.fwd(qlist[0], klist[0], vlist[0], qlist[1], klist[1], vlist[1], delta_s, lut, valid_block_num, KL, None, softmax_scale, is_causal, is_sparse, per_block_mean, is_bf16)
 
 
-def sageattn3_blackwell(q, k, v, attn_mask = None, is_causal = False, is_sparse = False, per_block_mean = True, **kwargs):
+def sageattn3_sparse_blackwell(q, k, v, attn_mask = None, is_causal = False, is_sparse = False, per_block_mean = True, **kwargs):
     if q.size(-1) >= 256:
         print(f"Unsupported Headdim {q.size(-1)}")
         return sdpa(q, k, v, is_causal = is_causal)
@@ -153,7 +200,7 @@ def sageattn3_blackwell(q, k, v, attn_mask = None, is_causal = False, is_sparse 
         q = q - qm
 
     delta_s = torch.matmul(qm, k.transpose(-2, -1))
-    delta_s = pad_128(delta_s)
+    delta_s = pad_128_dim3(delta_s)
 
     qlist_from_cuda = scale_and_quant_fp4(q)
     klist_from_cuda = scale_and_quant_fp4_permute(k)
