@@ -91,7 +91,7 @@ def pad_128_dim2(x):
         return x.contiguous()
     return F.pad(x, (0, 0, 0, pad_len), value=0).contiguous()
 
-def quant_fp4(x: torch.Tensor, doPadN=False, in_tensor_layout="NHD", out_tensor_layout="NHD") -> Tuple[torch.Tensor, torch.Tensor]:
+def quant_fp4(x: torch.Tensor, doPadN=False, in_tensor_layout="HND", out_tensor_layout="HND") -> Tuple[torch.Tensor, torch.Tensor]:
     assert x.ndim == 4
     if in_tensor_layout == "HND":
         B, H, N, D = x.shape
@@ -115,7 +115,7 @@ def quant_fp4(x: torch.Tensor, doPadN=False, in_tensor_layout="NHD", out_tensor_
     fp4quant_cuda_sparse.fp4_quant(x, packed_fp4, fp8_scale, in_layout, out_layout)
     return packed_fp4, fp8_scale
 
-def dequant_fp4(packed_fp4: torch.Tensor, fp8_scale: torch.Tensor, in_tensor_layout="NHD", out_tensor_layout="NHD"):
+def dequant_fp4(packed_fp4: torch.Tensor, fp8_scale: torch.Tensor, in_tensor_layout="HND", out_tensor_layout="HND"):
     assert packed_fp4.ndim == 4
     if in_tensor_layout == "HND":
         B, H, N, fp4_D = packed_fp4.shape
