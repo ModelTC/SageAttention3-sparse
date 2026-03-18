@@ -54,7 +54,7 @@ def mean_pool(x, BLK):
     return x_mean
 
 
-def get_block_map(q, k, topk=0.2, BLKQ=128, BLKK=128):
+def get_block_map(q, k, topk=0.2, return_lut=True, BLKQ=128, BLKK=128):
     pooled_qblocks = mean_pool(q, BLKQ)
     pooled_kblocks = mean_pool(k, BLKK)
     pooled_score = pooled_qblocks @ pooled_kblocks.transpose(-1, -2)
@@ -65,8 +65,11 @@ def get_block_map(q, k, topk=0.2, BLKQ=128, BLKK=128):
 
     sparse_map = torch.zeros_like(pooled_score, dtype=torch.int8)
     sparse_map.scatter_(-1, lut, 1)
-    lut, valid_block_num = block_map_lut_triton(sparse_map)
-    return lut, valid_block_num
+    if not return_lut:
+        return sparse_map
+    else:
+        lut, valid_block_num = block_map_lut_triton(sparse_map)
+        return lut, valid_block_num
 
 
 
