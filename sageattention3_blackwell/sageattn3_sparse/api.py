@@ -176,10 +176,8 @@ def blockscaled_fp4_attn(qlist: Tuple,
     return fp4attn_cuda_sparse.fwd(qlist[0], klist[0], vlist[0], qlist[1], klist[1], vlist[1], delta_s, lut, valid_block_num, KL, None, softmax_scale, is_causal, is_sparse, per_block_mean, is_bf16)
 
 
-def sageattn3_sparse_blackwell(q, k, v, attn_mask = None, is_causal = False, is_sparse = False, per_block_mean = True, topk = 0.2, use_sla_sparse = False, **kwargs):
-    if q.size(-1) >= 256:
-        print(f"Unsupported Headdim {q.size(-1)}")
-        return sdpa(q, k, v, is_causal = is_causal)
+def sage3_block_sparse_attn(q, k, v, lut = None, valid_block_num = None, is_causal = False, is_sparse = False, per_block_mean = True, topk = 0.2, **kwargs):
+    assert q.size(-1) < 256, f"Unsupported Headdim {q.size(-1)}"
 
     QL = q.size(2)
     KL = k.size(2)
@@ -187,14 +185,6 @@ def sageattn3_sparse_blackwell(q, k, v, attn_mask = None, is_causal = False, is_
 
     km = k.mean(dim=-2, keepdim=True)
     k -= km
-
-    if is_sparse:
-        if use_sla_sparse:
-            lut, valid_block_num = get_block_map(q, k, topk=topk, BLKQ=128, BLKK=128)
-        else:
-            lut, valid_block_num = get_block_map_meansim(q, k, is_causal = is_causal, cdfthreshd=None, topk=topk, return_lut=True, BLKQ=128, BLKK=128)
-    else:
-        lut, valid_block_num = None, None
 
     if per_block_mean:
         q, qm = triton_group_mean(q)
@@ -222,5 +212,20 @@ def sageattn3_sparse_blackwell(q, k, v, attn_mask = None, is_causal = False, is_
     per_block_mean,
     is_bf16
     )[0][:, :, :QL, :].contiguous()
+
+    return o_fp4
+
+def sparse_sageattn3(q, k, v, attn_mask = None, is_causal = False, per_block_mean = True, topk = 0.2, use_sla_sparse = False, **kwargs):
+    assert q.size(-1) < 256, f"Unsupported Headdim {q.size(-1)}"
+
+    km = k.mean(dim=-2, keepdim=True)
+    smooth_k = k - km
+
+    if use_sla_sparse:
+        lut, valid_block_num = get_block_map(q, smooth_k, topk=topk, BLKQ=128, BLKK=128)
+    else:
+        lut, valid_block_num = get_block_map_meansim(q, smooth_k, is_causal=is_causal, cdfthreshd=None, topk=topk, return_lut=True, BLKQ=128, BLKK=128)
+
+    o_fp4 = sage3_block_sparse_attn(q, k, v, lut=lut, valid_block_num=valid_block_num, is_causal=is_causal, per_block_mean=per_block_mean, topk=topk, **kwargs)
 
     return o_fp4

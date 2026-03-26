@@ -13,6 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-from .api import sageattn3_sparse_blackwell, quant_fp4, dequant_fp4
+from .api import sageattn3_sparse_blackwell, sage3_block_sparse_attn, quant_fp4, dequant_fp4
 from .sparge_sparse import get_block_map_meansim
 from .sla_sparse import get_block_map
