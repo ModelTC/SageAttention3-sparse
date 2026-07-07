@@ -199,6 +199,7 @@ def sage3_block_sparse_attn(q, k, v, lut = None, valid_block_num = None, is_caus
     klist_from_cuda = scale_and_quant_fp4_permute(k)
     vlist_from_cuda = scale_and_quant_fp4_transpose(v)
 
+    is_sparse=True
     o_fp4 = blockscaled_fp4_attn(
     qlist_from_cuda,
     klist_from_cuda, 
